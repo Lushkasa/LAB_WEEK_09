@@ -36,21 +36,20 @@ import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import java.net.URLEncoder
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        //Here, we use setContent instead of setContentView
         setContent {
-            //Here, we wrap our content with the theme
-            //You can check out the LAB_WEEK_09Theme inside Theme.kt
             LAB_WEEK_09Theme {
-                // A surface container using the 'background' color from the theme
                 Surface(
-                    //We use Modifier.fillMaxSize() to make the surface fill the whole screen
                     modifier = Modifier.fillMaxSize(),
-                    //We use MaterialTheme.colorScheme.background to get the background color
-                    //and set it as the color of the surface
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
@@ -67,6 +66,25 @@ data class Student(
     var name: String
 )
 
+// Moshi instance for JSON serialization/deserialization
+object JsonConverter {
+    private val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
+
+    fun toJson(students: List<Student>): String {
+        val type = Types.newParameterizedType(List::class.java, Student::class.java)
+        val adapter = moshi.adapter<List<Student>>(type)
+        return adapter.toJson(students)
+    }
+
+    fun fromJson(json: String): List<Student> {
+        val type = Types.newParameterizedType(List::class.java, Student::class.java)
+        val adapter = moshi.adapter<List<Student>>(type)
+        return adapter.fromJson(json) ?: emptyList()
+    }
+}
+
 @Composable
 fun Home(navigateFromHomeToResult: (String) -> Unit) {
     val listData = remember{mutableStateListOf(
@@ -74,15 +92,8 @@ fun Home(navigateFromHomeToResult: (String) -> Unit) {
         Student("Tina"),
         Student("Tono")
     )}
-    //Here, we create a mutable state of Student
-    //This is so that we can get the value of the input field
     val inputField = remember{mutableStateOf(Student("")) }
-    //We call the HomeContent composable
-    //Here, we pass:
-    //listData to show the list of items inside HomeContent
-    //inputField to show the input field value inside HomeContent
-    //A lambda function to update the value of the inputField
-    //A lambda function to add the inputField to the listData
+
     HomeContent(
         listData,
         inputField.value,
@@ -93,7 +104,12 @@ fun Home(navigateFromHomeToResult: (String) -> Unit) {
                 inputField.value = Student("")
             }
         },
-        { navigateFromHomeToResult(listData.toList().toString()) }
+        {
+            // Convert list to JSON and encode for URL
+            val json = JsonConverter.toJson(listData.toList())
+            val encodedJson = URLEncoder.encode(json, StandardCharsets.UTF_8.toString())
+            navigateFromHomeToResult(encodedJson)
+        }
     )
 }
 
@@ -108,22 +124,19 @@ fun HomeContent(
     LazyColumn {
         item {
             Column(
-            modifier = Modifier.padding(16.dp).fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier.padding(16.dp).fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 OnBackgroundTitleText(text = stringResource(
                     id = R.string.enter_item)
                 )
 
-                //Here, we use TextField to display a text input field
                 TextField(
-                    //Set the value of the input field
                     value = inputField.name,
-                    //Set the keyboard type of the input field
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text
                     ),
-                            onValueChange = {
+                    onValueChange = {
                         onInputValueChange(it)
                     }
                 )
@@ -152,24 +165,13 @@ fun HomeContent(
 
 @Composable
 fun App(navController: NavHostController) {
-    //Here, we use NavHost to create a navigation graph
-    //We pass the navController as a parameter
-    //We also set the startDestination to "home"
-    //This means that the app will start with the Home composable
     NavHost(
         navController = navController,
         startDestination = "home"
     ) {
-        //Here, we create a route called "home"
-        //We pass the Home composable as a parameter
-        //This means that when the app navigates to "home",
-        //the Home composable will be displayed
         composable("home") {
-            //Here, we pass a lambda function that navigates to
-            "resultContent"
-            //and pass the listData as a parameter
-            Home { navController.navigate(
-                "resultContent/?listData=$it")
+            Home { encodedJson ->
+                navController.navigate("resultContent/?listData=$encodedJson")
             }
         }
         composable(
@@ -178,32 +180,36 @@ fun App(navController: NavHostController) {
                 type = NavType.StringType }
             )
         ) {
-            ResultContent(
-                it.arguments?.getString("listData").orEmpty()
-            )
+            val encodedJson = it.arguments?.getString("listData").orEmpty()
+            // Decode the URL-encoded JSON
+            val json = URLDecoder.decode(encodedJson, StandardCharsets.UTF_8.toString())
+            // Convert JSON back to list of Students
+            val studentList = JsonConverter.fromJson(json)
+            ResultContent(studentList)
         }
     }
 }
 
 @Composable
-fun ResultContent(listData: String) {
-    Column(
+fun ResultContent(listData: List<Student>) {
+    LazyColumn(
         modifier = Modifier
-            .padding(vertical = 4.dp)
+            .padding(16.dp)
             .fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        //Here, we call the OnBackgroundItemText UI Element
-        OnBackgroundItemText(text = listData)
+        item {
+            OnBackgroundTitleText(text = "Student List")
+        }
+        items(listData) { student ->
+            Column(
+                modifier = Modifier
+                    .padding(vertical = 4.dp)
+                    .fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                OnBackgroundItemText(text = student.name)
+            }
+        }
     }
 }
-
-//Here, we create a preview function of the Home composable
-//This function is specifically used to show a preview of the Home composable
-//This is only for development purpose
-//@Preview(showBackground = true)
-//@Composable
-//fun PreviewHome() {
-//    Home(listOf("Tanu", "Tina", "Tono"))
-//}
-
